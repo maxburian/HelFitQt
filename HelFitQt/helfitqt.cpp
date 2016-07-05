@@ -81,7 +81,9 @@ void HelFitQt::on_btnLoadFile_clicked()
 		//Import data from file inte scatteringdata object
 		saxs::import_scatteringdata(scatterfilepath, imported_data);
 		//convert object data into globals x_expdata y_expdata
-		saxs::convertScatteringToVector(imported_data, x_expdata, y_expdata);
+		saxs::convertScatteringToVector(imported_data, x_expdata, y_expdata, e_expdata);
+		//rescale data so no values are <1
+		saxs::rescaleScatteringData(imported_data, y_expdata, e_expdata);
 
 		//determine datarange globlas
 		min_datarange = 0;
@@ -579,47 +581,14 @@ void HelFitQt::initialize_graphs()
 	ui.wdgtXYplot->replot();
 }
 
-void HelFitQt::plot_model(std::vector<double>& boundaries)
-{
-	double rmax = boundaries[0] * 1.1;
-	double zmax = boundaries[1];
-	double zmin = boundaries[2];
-	QPen RedPen;
-	RedPen.setColor(Qt::green);
-	ui.wdgtXZplot->addGraph();
-	ui.wdgtXZplot->graph(1)->setPen(RedPen);
-	ui.wdgtXZplot->graph(1)->setLineStyle(QCPGraph::lsNone);
-	ui.wdgtXZplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
-	ui.wdgtXZplot->graph(1)->setData(model_x, model_z);
-	ui.wdgtXZplot->xAxis->setRange(-rmax, rmax);
-	ui.wdgtXZplot->yAxis->setRange(zmin, zmax);
-	ui.wdgtXZplot->replot();
-
-	ui.wdgtYZplot->addGraph();
-	ui.wdgtYZplot->graph(1)->setPen(RedPen);
-	ui.wdgtYZplot->graph(1)->setLineStyle(QCPGraph::lsNone);
-	ui.wdgtYZplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
-	ui.wdgtYZplot->graph(1)->setData(model_y, model_z);
-	ui.wdgtYZplot->xAxis->setRange(-rmax, rmax);
-	ui.wdgtYZplot->yAxis->setRange(zmin, zmax);
-	ui.wdgtYZplot->replot();
-
-	ui.wdgtXYplot->addGraph();
-	ui.wdgtXYplot->graph(1)->setPen(RedPen);
-	ui.wdgtXYplot->graph(1)->setLineStyle(QCPGraph::lsNone);
-	ui.wdgtXYplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
-	ui.wdgtXYplot->graph(1)->setData(model_x, model_y);
-	ui.wdgtXYplot->xAxis->setRange(-rmax, rmax);
-	ui.wdgtXYplot->yAxis->setRange(-rmax, rmax);
-	ui.wdgtXYplot->replot();
-}
-
 void HelFitQt::plot_data()
 {
 	x_fitdata.resize(num_calcpoints);
 	y_fitdata.resize(num_calcpoints);
+	e_fitdata.resize(num_calcpoints);
 	x_fitdata = x_expdata;
 	y_fitdata = y_expdata;
+	e_fitdata = e_expdata;
 
 	//add experimental data
 	ui.wdgtDataPlot->addGraph();
@@ -631,7 +600,10 @@ void HelFitQt::plot_data()
 	RedPen.setColor(Qt::red);
 	RedPen.setWidthF(2);
 	ui.wdgtDataPlot->graph(1)->setPen(RedPen);
-	ui.wdgtDataPlot->graph(1)->setData(x_fitdata, y_fitdata);
+	ui.wdgtDataPlot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCircle, Qt::red, Qt::red, 1));
+	ui.wdgtDataPlot->graph(1)->setErrorType(QCPGraph::etValue);
+	ui.wdgtDataPlot->graph(1)->setErrorPen(QPen(Qt::red));
+	ui.wdgtDataPlot->graph(1)->setDataValueError(x_fitdata, y_fitdata, e_fitdata);
 
 	// give the axes some labels:
 	ui.wdgtDataPlot->xAxis->setLabel("q (1/nm)");
@@ -666,13 +638,16 @@ void HelFitQt::replotData()
 {
 	x_fitdata.clear();
 	y_fitdata.clear();
+	e_fitdata.clear();
 	x_fitdata.resize(num_calcpoints);
 	y_fitdata.resize(num_calcpoints);
+	e_fitdata.resize(num_calcpoints);
 
 	for (int i = min_fitrange; i < max_fitrange+1; i++)
 	{
 		x_fitdata[i- min_fitrange] = x_expdata[i];
 		y_fitdata[i- min_fitrange] = y_expdata[i];
+		e_fitdata[i - min_fitrange] = e_expdata[i];
 	}
 	if (ui.chkbLogLogPlot->checkState() == Qt::Checked)
 	{
@@ -683,8 +658,44 @@ void HelFitQt::replotData()
 	{
 		ui.wdgtDataPlot->xAxis->setScaleType(QCPAxis::stLinear);
 	}
-	ui.wdgtDataPlot->graph(1)->setData(x_fitdata, y_fitdata);
+	ui.wdgtDataPlot->graph(1)->setDataValueError(x_fitdata, y_fitdata, e_fitdata);
 	ui.wdgtDataPlot->replot();
+}
+
+void HelFitQt::plot_model(std::vector<double>& boundaries)
+{
+	double rmax = boundaries[0] * 1.1;
+	double zmax = boundaries[1];
+	double zmin = boundaries[2];
+	QPen RedPen;
+	RedPen.setWidth(2);
+	RedPen.setColor(Qt::green);
+	ui.wdgtXZplot->addGraph();
+	ui.wdgtXZplot->graph(1)->setPen(RedPen);
+	ui.wdgtXZplot->graph(1)->setLineStyle(QCPGraph::lsNone);
+	ui.wdgtXZplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
+	ui.wdgtXZplot->graph(1)->setData(model_x, model_z);
+	ui.wdgtXZplot->xAxis->setRange(-rmax, rmax);
+	ui.wdgtXZplot->yAxis->setRange(zmin, zmax);
+	ui.wdgtXZplot->replot();
+
+	ui.wdgtYZplot->addGraph();
+	ui.wdgtYZplot->graph(1)->setPen(RedPen);
+	ui.wdgtYZplot->graph(1)->setLineStyle(QCPGraph::lsNone);
+	ui.wdgtYZplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
+	ui.wdgtYZplot->graph(1)->setData(model_y, model_z);
+	ui.wdgtYZplot->xAxis->setRange(-rmax, rmax);
+	ui.wdgtYZplot->yAxis->setRange(zmin, zmax);
+	ui.wdgtYZplot->replot();
+
+	ui.wdgtXYplot->addGraph();
+	ui.wdgtXYplot->graph(1)->setPen(RedPen);
+	ui.wdgtXYplot->graph(1)->setLineStyle(QCPGraph::lsNone);
+	ui.wdgtXYplot->graph(1)->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 1));
+	ui.wdgtXYplot->graph(1)->setData(model_x, model_y);
+	ui.wdgtXYplot->xAxis->setRange(-rmax, rmax);
+	ui.wdgtXYplot->yAxis->setRange(-rmax, rmax);
+	ui.wdgtXYplot->replot();
 }
 
 void HelFitQt::replotModel() 
@@ -714,7 +725,10 @@ void HelFitQt::plotCalcModel()
 	int k = 0;
 	ui.wdgtDataPlot->addGraph();
 	if (data_loaded) { k = 2; }
-	ui.wdgtDataPlot->graph(k)->setPen(QPen(Qt::black));
+	QPen BlackPen;
+	BlackPen.setColor(Qt::black);
+	BlackPen.setWidthF(2);
+	ui.wdgtDataPlot->graph(k)->setPen(BlackPen);
 	ui.wdgtDataPlot->graph(k)->setData(x_imported_model_data, y_imported_model_data);
 	if (!data_loaded)
 	{
@@ -876,6 +890,7 @@ void HelFitQt::movedatatofittingobject()
 	//First move data to global object
 	globalfittingobject->m_data_q.clear();
 	globalfittingobject->m_data_I.clear();
+	globalfittingobject->m_data_e.clear();
 	globalfittingobject->m_model_I.clear();
 	globalfittingobject->m_fitted_I.clear();
 	if (data_loaded)
@@ -884,6 +899,8 @@ void HelFitQt::movedatatofittingobject()
 		globalfittingobject->m_data_q = x_fitdata.toStdVector();
 		globalfittingobject->m_data_I.resize(x_fitdata.size());
 		globalfittingobject->m_data_I = y_fitdata.toStdVector();
+		globalfittingobject->m_data_e.resize(x_fitdata.size());
+		globalfittingobject->m_data_e = e_fitdata.toStdVector();
 		globalfittingobject->m_model_I.resize(x_fitdata.size());
 		globalfittingobject->m_fitted_I.resize(x_fitdata.size());
 	}

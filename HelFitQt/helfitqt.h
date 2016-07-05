@@ -43,9 +43,11 @@ public:
 	std::vector<saxs::scatteringdata_sp> imported_data;
 	QVector<double> x_expdata;
 	QVector<double> y_expdata;
+	QVector<double> e_expdata;
 	bool data_loaded = false;
 	QVector<double> x_fitdata;
 	QVector<double> y_fitdata;
+	QVector<double> e_fitdata;
 	int min_datarange;
 	int max_datarange;
 	int num_datapoints;

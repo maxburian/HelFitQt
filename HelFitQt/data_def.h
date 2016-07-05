@@ -43,11 +43,12 @@ typedef boost::shared_ptr<model> model_sp;
 //------------------------------------------------------------------------------
 struct scatteringdata
 {
-	scatteringdata(double q = 0, double I = 0) :
-		m_q(q), m_I(I) { }
+	scatteringdata(double q = 0, double I = 0, double e=0) :
+		m_q(q), m_I(I), m_e(e) { }
 
 	double m_q;
 	double m_I;
+	double m_e;
 };
 
 typedef boost::shared_ptr<scatteringdata> scatteringdata_sp;
@@ -65,6 +66,7 @@ struct fittingobject
 	std::vector<saxs::coordinate_sp> m_model;
 	std::vector<double> m_data_q;
 	std::vector<double> m_data_I;
+	std::vector<double> m_data_e;
 	std::vector<double> m_model_I;
 	std::vector<double> m_fitted_I;
 	double m_chi;

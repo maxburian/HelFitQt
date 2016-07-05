@@ -136,14 +136,14 @@ namespace saxs
 	//------------------------------------------------------------------------------
 	//	linear fit of two vectors without public vars
 	//------------------------------------------------------------------------------
-	double chisquare(std::vector<double>& exp, std::vector<double>& model, std::vector<double>& x, int& weighing)
+	double chisquare(std::vector<double>& exp, std::vector<double>& err, std::vector<double>& model)
 	{
 		//Chisquare between data1(exp) and data2(model)
 		double chi = 0;
 		double weight = 0;
 		for (int i = 0; i < exp.size(); i++)
 		{
-			chi += std::pow((exp[i] - model[i])/0.01, 2)/(exp[i]);
+			chi += std::pow((exp[i] - model[i])/err[i], 2);
 			weight += 1;
 		}
 		return chi / weight;
@@ -180,12 +180,13 @@ namespace saxs
 		std::vector<double> weight;
 		std::pair<double, double> fitparams;
 
-		reftofittingobject->m_norm = *std::max_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end());
-		reftofittingobject->m_norm_offset = *std::min_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end());
+		reftofittingobject->m_norm_offset = *std::min_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end()) + 1;
+		reftofittingobject->m_norm = (*std::max_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end()) - reftofittingobject->m_norm_offset);
+		
 		for (int i = 0; i < reftofittingobject->m_model_I.size(); i++)
 		{
 			reftofittingobject->m_fitted_I[i] = (reftofittingobject->m_model_I[i] - 
-				0.99*reftofittingobject->m_norm_offset) / (reftofittingobject->m_norm - 0.99*reftofittingobject->m_norm_offset);
+				reftofittingobject->m_norm_offset) / (reftofittingobject->m_norm)*reftofittingobject->m_data_I[0];
 		}
 
 		//Loading data in standard vectors and finding minimum value
@@ -193,6 +194,7 @@ namespace saxs
 		{
 			exp.push_back(reftofittingobject->m_data_I[i]);
 			model.push_back(reftofittingobject->m_fitted_I[i]);
+			weight.push_back(1./reftofittingobject->m_data_e[i]);
 		}
 		weight.resize(model.size());
 		//Apply weighting conditions
@@ -200,17 +202,17 @@ namespace saxs
 		{
 			if (reftofittingobject->m_weighing ==0 )
 			{
-				weight[i] = reftofittingobject->m_data_q[i]/std::pow(exp[i],0.5);
+				weight[i] *= reftofittingobject->m_data_q[i];
 			}
 			if (reftofittingobject->m_weighing == 1)
 			{
-				weight[i] = std::pow(reftofittingobject->m_data_q[i], 2)/std::pow(exp[i], 0.5);
+				weight[i] *= std::pow(reftofittingobject->m_data_q[i], 2);
 			}
 			if (reftofittingobject->m_weighing == 2)
 			{
 				exp[i] = std::log(exp[i]);
 				model[i] = std::log(model[i]);
-				weight[i] =1;
+				weight[i] = std::log(weight[i]);
 			}
 		}
 
@@ -232,8 +234,8 @@ namespace saxs
 			}
 		}
 
-		reftofittingobject->m_chi = chisquare(reftofittingobject->m_data_I, reftofittingobject->m_fitted_I,
-			reftofittingobject->m_data_q, reftofittingobject->m_weighing);
+		reftofittingobject->m_chi = chisquare(reftofittingobject->m_data_I, reftofittingobject->m_data_e,  
+			reftofittingobject->m_fitted_I);
 	}
 
 	void recalc_fitted_i(fittingobject_sp& localfittingobject_sp)
@@ -257,8 +259,8 @@ namespace saxs
 				localfittingobject_sp->m_fitted_I[i] = std::exp(localfittingobject_sp->m_linreg_results.second*std::log(localfittingobject_sp->m_fitted_I[i]) + localfittingobject_sp->m_linreg_results.first);
 			}
 		}
-		localfittingobject_sp->m_chi = chisquare(localfittingobject_sp->m_data_I, localfittingobject_sp->m_fitted_I,
-			localfittingobject_sp->m_data_q, localfittingobject_sp->m_weighing);
+		localfittingobject_sp->m_chi = chisquare(localfittingobject_sp->m_data_I, localfittingobject_sp->m_data_e,
+			localfittingobject_sp->m_fitted_I);
 	}
 
 	//Recalculates the scattering pattern if changecood is moved by movement

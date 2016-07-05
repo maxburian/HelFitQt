@@ -912,7 +912,7 @@
     <addaction name="menuWeight1"/>
     <addaction name="menuWeight2"/>
     <addaction name="separator"/>
-    <addaction name="actionChange_fitting_params"/>
+    <addaction name="menuChangeFittingParams"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menuRunDebyeCalc"/>
@@ -985,7 +985,7 @@
     <string>Generate random model...</string>
    </property>
   </action>
-  <action name="actionChange_fitting_params">
+  <action name="menuChangeFittingParams">
    <property name="text">
     <string>Change fitting params...</string>
    </property>

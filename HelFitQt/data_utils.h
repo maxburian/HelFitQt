@@ -64,6 +64,20 @@ namespace saxs
 	}
 
 	//------------------------------------------------------------------------------
+	//	Integer inputbox
+	//------------------------------------------------------------------------------
+	double input_message_doub(QString text, double curr, double min, double max)
+	{
+		//Predefine Messagebox for error warnings
+		bool ok;
+		double input = -1;
+		input = QInputDialog::getDouble(NULL, "Specify..", text, curr, min, max, 1, &ok);
+
+		if (ok && input > 0) return input;
+		else return curr;
+	}
+
+	//------------------------------------------------------------------------------
 	//	Extract values from scatteringdataobject into globals 
 	//------------------------------------------------------------------------------
 	QString filedialog(QString dialogTitle, QString FileFilter)
@@ -100,24 +114,54 @@ namespace saxs
 		msgBox.setStandardButtons(QMessageBox::Ok);
 		msgBox.setIcon(QMessageBox::Critical);
 
-		//Open file 
-		std::ifstream infile(file_name_string.c_str(), std::ifstream::in);
-
-		//Check if correctly open
-		if (!infile.is_open())
-		{
-			std::stringstream error_stream;
-			msgBox.setInformativeText("Could not open file " + file_name + "!");
-			int ret = msgBox.exec();
-			return;
-		}
-		//Temporary variable used during import
-		double q = 0;
-		double I = 0;
-
 		//Temporary line used during import
 		std::string line;
 
+		//Open file
+		std::ifstream infile(file_name_string.c_str(), std::ifstream::in);
+		//Check if correctly open
+		if (!infile.is_open())
+		{
+			saxs::error_message("Could not open file " + file_name + "!");
+			return;
+		}
+		//Check number of columns to read error
+
+		getline(infile, line);
+		std::istringstream iss(line);
+		int columns = 0;
+		do
+		{
+			std::string sub;
+			iss >> sub;
+			if (sub.length())
+				++columns;
+		} while (iss);
+		double error_scale = 0;
+		bool error_specified;
+		switch (columns) 
+		{
+		case 0: saxs::error_message("No data in file:" + file_name + "!");
+			return;
+		case 1: saxs::error_message("No scattering data in file:" + file_name + "!");
+			return;
+		case 2: //error_scale = saxs::input_message_doub("No error given in file "+ file_name +"\nSpecify artificial error weight in %:",3,0.0001,100);
+			error_specified = false;
+			break;
+		case 3: error_specified = true;
+			break;
+		}
+
+		//Go back to line 0
+		infile.clear();
+		infile.seekg(0, std::ios::beg);
+
+		//Temporary variable used during import
+		double q = 0;
+		double I = 0;
+		double e = 0;
+
+		
 		//Read and parse file line by line
 		int counter = 0;
 		while (getline(infile, line))
@@ -125,19 +169,22 @@ namespace saxs
 			counter += 1;
 
 			std::istringstream iss(line);
-			iss >> q >> I;
+			if (error_specified) iss >> q >> I >> e;
+			else
+			{
+				iss >> q >> I;
+				e = 0;
+			}
 
 			//Check for errors
 			if (iss.fail())
 			{
-				std::stringstream error_stream;
-				msgBox.setInformativeText("Error in " + file_name + " at line " + QString::number(counter));
-				int ret = msgBox.exec();
+				saxs::error_message("Error in " + file_name + " at line " + QString::number(counter));
 				return;
 			}
 
 			//Store coordinates
-			data.push_back(scatteringdata_sp(new scatteringdata(q, I)));
+			data.push_back(scatteringdata_sp(new scatteringdata(q, I, e)));
 		}
 
 		infile.close();
@@ -243,19 +290,43 @@ namespace saxs
 	//------------------------------------------------------------------------------
 	//	Extract values from scatteringdataobject into globals 
 	//------------------------------------------------------------------------------
-	void convertScatteringToVector(std::vector<saxs::scatteringdata_sp> scatterobject, QVector<double>& x, QVector<double>& y)
+	void convertScatteringToVector(std::vector<saxs::scatteringdata_sp> scatterobject, QVector<double>& x, QVector<double>& y, QVector<double>& err)
 	{
 		int n = scatterobject.size();
 		int i = 0;
 		x.resize(n);
 		y.resize(n);
+		err.resize(n);
 
 		for (int i = 0; i<n; ++i)
 		{
 			x[i] = scatterobject[i]->m_q;
 			y[i] = scatterobject[i]->m_I;
+			err[i] = scatterobject[i]->m_e;
 		}
 	}
+
+	//------------------------------------------------------------------------------
+	//	Rescales scattering data so smallest value is 1
+	//------------------------------------------------------------------------------
+	void rescaleScatteringData(std::vector<saxs::scatteringdata_sp> scatterobject, QVector<double>& y, QVector<double>& err)
+	{
+		int n = scatterobject.size();
+		double ymin = *std::min_element(y.constBegin(), y.constEnd());
+		int i = 0;
+		bool calcerr = false;
+		if (err[0] == 0) calcerr = true;
+
+		for (int i = 0; i<n; ++i)
+		{
+			y[i] = scatterobject[i]->m_I / ymin;
+			if (!calcerr) err[i] = scatterobject[i]->m_e / ymin;
+			else err[i] = std::pow(y[i], 0.5);
+			scatterobject[i]->m_I = y[i];
+			scatterobject[i]->m_e = err[i];
+		}
+	}
+
 
 	//------------------------------------------------------------------------------
 	//	Extract values from Coordinateobject into globals 
@@ -513,8 +584,6 @@ namespace saxs
 		outfile.close();
 	}
 
-
-
 	//************************************************
 	// MAIN FITTING FUNCTIONS!!!!!!!
 	//************************************************
@@ -559,11 +628,12 @@ namespace saxs
 		//normfittingdata
 		if (reftofittingobject->m_data_I.size() == 0)
 		{
-			double norm = *std::max_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end());
-			double norm_offset = *std::min_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end());
+			double norm_offset = *std::min_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end())+1;
+			double norm = (*std::max_element(reftofittingobject->m_model_I.begin(), reftofittingobject->m_model_I.end())- norm_offset);
+			
 			for (int i = 0; i < reftofittingobject->m_model_I.size(); i++)
 			{
-				reftofittingobject->m_fitted_I[i] = (reftofittingobject->m_model_I[i] - 0.99*norm_offset) / (norm - 0.99*norm_offset);
+				reftofittingobject->m_fitted_I[i] = (reftofittingobject->m_model_I[i] - norm_offset) / (norm)*reftofittingobject->m_data_I[0];
 			}
 			reftofittingobject->m_chi = NAN;
 			reftofittingobject->m_linreg_results.first = NAN;
